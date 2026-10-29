@@ -1,0 +1,141 @@
+name: CI
+
+on:
+  pull_request:
+  push:
+    branches: [main]
+    tags: ["v*"]
+
+permissions:
+  contents: read
+
+jobs:
+  validate:
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - name: Install Conn3x
+        env: &gh
+          GH_TOKEN: ${{ github.token }}
+        run: &install |
+          tag=$(gh release view -R conn3xorg/conn3x --json tagName -q .tagName)
+          file="conn3x_${tag#v}_linux_amd64.tar.gz"
+          cd "$RUNNER_TEMP"
+          curl -sSfLO "https://github.com/conn3xorg/conn3x/releases/download/$tag/$file"
+          curl -sSfLO "https://github.com/conn3xorg/conn3x/releases/download/$tag/checksums.txt"
+          grep " $file\$" checksums.txt | sha256sum -c -
+          mkdir -p bin && tar -xzf "$file" -C bin conn3x
+          echo "$RUNNER_TEMP/bin" >> "$GITHUB_PATH"
+      - run: conn3x version
+      - run: conn3x fmt -check -recursive
+      - name: Validate
+        run: conn3x init -backend=false && conn3x validate
+      - name: Validate the example
+        working-directory: examples/local
+        run: conn3x init -backend=false && conn3x validate
+
+  e2e:
+    needs: validate
+    runs-on: ubuntu-24.04
+    strategy:
+      fail-fast: false
+      # Each distribution runs once as the primary and once as the
+      # secondary, beside a different one. Two Fedora containers from the
+      # same image would also share a machine ID, and so a MAC address.
+      matrix:
+        include:
+          - { primary: rocky10, secondary: ubuntu2404 }
+          - { primary: ubuntu2404, secondary: rocky10 }
+          - { primary: debian13, secondary: fedora45 }
+          - { primary: fedora45, secondary: debian13 }
+    name: e2e (${{ matrix.primary }} to ${{ matrix.secondary }})
+    env:
+      TF_VAR_secondary_port: "2223"
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      # The test host images live in the Conn3x repo.
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          repository: conn3xorg/conn3x
+          ref: main
+          path: conn3x
+          persist-credentials: false
+          sparse-checkout: test/images
+      - name: Install Conn3x
+        env: *gh
+        run: *install
+      - name: Start a ${{ matrix.primary }} primary and a ${{ matrix.secondary }} secondary
+        working-directory: examples/local
+        env:
+          IMAGES: ${{ github.workspace }}/conn3x/test/images
+          PODMAN: sudo podman
+        run: |
+          CONTAINERFILE=$IMAGES/${{ matrix.primary }}/Containerfile ./up.sh
+          CONTAINERFILE=$IMAGES/${{ matrix.secondary }}/Containerfile NAME=circuit-bind-secondary PORT=2223 ./up.sh
+          secret=$(openssl rand -base64 32)
+          echo "::add-mask::$secret"
+          {
+            echo "TF_VAR_tsig_secret=$secret"
+            echo "TF_VAR_primary_address=$(sudo podman inspect -f '{{.NetworkSettings.IPAddress}}' circuit-bind)"
+            echo "TF_VAR_secondary_address=$(sudo podman inspect -f '{{.NetworkSettings.IPAddress}}' circuit-bind-secondary)"
+          } >> "$GITHUB_ENV"
+      - name: Apply, then plan again with no changes
+        working-directory: examples/local
+        run: |
+          conn3x init
+          conn3x apply -auto-approve
+          conn3x plan -detailed-exitcode
+      # Queries go from the secondary's container to both servers' addresses
+      # on Podman's network, so recursion is refused as it would be for any
+      # outside client.
+      - name: Check both servers answer for the zone with authority
+        env:
+          WWW: 192.0.2.10
+        run: &check |
+          for c in circuit-bind circuit-bind-secondary; do
+            sudo podman exec $c sh -c 'command -v dig >/dev/null || if command -v apt-get >/dev/null; then apt-get update -qq && DEBIAN_FRONTEND=noninteractive apt-get install -y -qq bind9-dnsutils >/dev/null; else dnf -y -q install bind-utils; fi'
+          done
+          sudo podman exec -i circuit-bind-secondary bash -eu -s "$TF_VAR_primary_address" "$TF_VAR_secondary_address" "$WWW" <<'EOF'
+          primary=$1; secondary=$2; www=$3
+          for host in "$primary" "$secondary"; do
+            # The secondary follows the primary's NOTIFY, which takes a moment.
+            for _ in $(seq 30); do [ "$(dig +short @"$host" www.example.test A)" = "$www" ] && break; sleep 1; done
+            dig @"$host" www.example.test A | tee /dev/stderr | grep -q 'flags:.* aa[ ;]'
+            [ "$(dig +short @"$host" www.example.test A)" = "$www" ]
+            [ "$(dig +short @"$host" example.test MX)" = "10 mail.example.test." ]
+            [ "$(dig +short @"$host" example.test TXT)" = '"v=spf1 mx -all"' ]
+            [ "$(dig +short @"$host" docs.example.test CNAME)" = "www.example.test." ]
+            dig @"$host" nothing.example.test | grep -q 'status: NXDOMAIN'
+            dig @"$host" example.org | grep -q 'status: REFUSED'
+          done
+          [ "$(dig +short @"$primary" example.test SOA)" = "$(dig +short @"$secondary" example.test SOA)" ]
+          # Without the TSIG key, the primary refuses a transfer.
+          dig @"$primary" example.test AXFR | grep -q 'Transfer failed'
+          journalctl -u named -u bind --no-pager | grep -q "transferred serial .*: TSIG 'transfer'"
+          EOF
+      - name: Change a record, then plan again with no changes
+        working-directory: examples/local
+        run: |
+          before=$(sudo podman exec circuit-bind-secondary dig +short @127.0.0.1 example.test SOA | awk '{ print $3 }')
+          conn3x apply -auto-approve -var www_address=192.0.2.11
+          conn3x plan -detailed-exitcode -var www_address=192.0.2.11
+          echo "before=$before" >> "$GITHUB_ENV"
+      - name: Check the secondary has the new record
+        env:
+          WWW: 192.0.2.11
+        run: *check
+      - name: Check the serial went up
+        run: |
+          after=$(sudo podman exec circuit-bind-secondary dig +short @127.0.0.1 example.test SOA | awk '{ print $3 }')
+          echo "serial $before -> $after"
+          [ "$after" -gt "$before" ]
+      - name: Clean up
+        if: always()
+        working-directory: examples/local
+        env:
+          PODMAN: sudo podman
+        run: ./down.sh
