@@ -151,11 +151,12 @@ circuit "bind" {
         old=$(awk '$2 == ";" && $3 == "serial" { print $1; exit }' "$live" 2>/dev/null)
         new=$(date -u +%Y%m%d)00
         if [ -n "$old" ] && [ "$old" -ge "$new" ]; then new=$((old + 1)); fi
-        sed "s/CONN3X_SERIAL/$new/" "$live.conn3x" > "$live.new"
-        if ! named-checkzone ${item.key} "$live.new"; then rm -f "$live.new"; exit 1; fi
-        chgrp ${local.group[each.key]} "$live.new"
-        chmod 640 "$live.new"
-        mv "$live.new" "$live"
+        # The candidate stays out of the zone directory, which bind's group can write.
+        w=$(mktemp -d)
+        trap 'rm -rf "$w"' EXIT
+        sed "s/CONN3X_SERIAL/$new/" "$live.conn3x" > "$w/new"
+        named-checkzone ${item.key} "$w/new" || exit 1
+        install -g ${local.group[each.key]} -m 640 "$w/new" "$live"
         if command -v restorecon >/dev/null; then restorecon "$live"; fi
       EOT
       unless   = <<-EOT
