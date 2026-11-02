@@ -1,5 +1,7 @@
 # circuit-bind
 
+[![Conn3x grade](https://conn3x.org/circuits/bind/grade.svg)](https://conn3x.org/circuits/bind/grade)
+
 A Conn3x circuit that runs BIND 9 as an authoritative DNS server, from your distribution's own packages. You write your zones as records in HCL; the circuit turns them into zone files, gives each a serial that goes up whenever the records change, and has BIND serve them. A second server can carry the same zones as a secondary, copying them from the primary over a TSIG-signed transfer and picking up each change as soon as the primary sends NOTIFY.
 
 Recursion is off, so BIND answers for its own zones and refuses everything else. If you want a resolver for your network, [circuit-unbound](https://github.com/conn3xorg/circuit-unbound) is the one to reach for.
