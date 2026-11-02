@@ -133,6 +133,22 @@ jobs:
           after=$(sudo podman exec circuit-bind-secondary dig +short @127.0.0.1 example.test SOA | awk '{ print $3 }')
           echo "serial $before -> $after"
           [ "$after" -gt "$before" ]
+      - name: A link beside the zone file leaves where it points as it was
+        working-directory: examples/local
+        run: |
+          sudo podman exec circuit-bind sh -ec '
+            echo keep > /root/keep
+            chmod 600 /root/keep
+            d=/var/lib/bind
+            [ -d "$d" ] || d=/var/named
+            ln -s /root/keep "$d/example.test.zone.new"
+          '
+          conn3x apply -auto-approve -var www_address=192.0.2.12
+          sudo podman exec circuit-bind sh -ec '
+            [ "$(stat -c "%U:%G %a" /root/keep)" = "root:root 600" ]
+            grep -qx keep /root/keep
+          '
+          conn3x plan -detailed-exitcode -var www_address=192.0.2.12
       - name: Clean up
         if: always()
         working-directory: examples/local
