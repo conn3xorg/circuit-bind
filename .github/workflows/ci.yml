@@ -89,6 +89,15 @@ jobs:
           conn3x init
           conn3x apply -auto-approve
           conn3x plan -detailed-exitcode
+      # The TSIG secret goes into named's config through content_wo, so state
+      # holds only its HMAC, and nothing under .terraform holds it either.
+      - name: Check the TSIG secret stays out of state
+        working-directory: examples/local
+        run: |
+          if grep -rqF -e "$TF_VAR_tsig_secret" terraform.tfstate .terraform/; then
+            echo "The TSIG secret is in terraform.tfstate or under .terraform/." >&2
+            exit 1
+          fi
       # Queries go from the secondary's container to both servers' addresses
       # on Podman's network, so recursion is refused as it would be for any
       # outside client.
