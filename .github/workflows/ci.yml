@@ -75,7 +75,7 @@ jobs:
           PODMAN: sudo podman
         run: |
           CONTAINERFILE=$IMAGES/${{ matrix.primary }}/Containerfile ./up.sh
-          CONTAINERFILE=$IMAGES/${{ matrix.secondary }}/Containerfile NAME=circuit-bind-secondary PORT=2223 ./up.sh
+          CONTAINERFILE=$IMAGES/${{ matrix.secondary }}/Containerfile CONTAINER_NAME=circuit-bind-secondary PORT=2223 ./up.sh
           secret=$(openssl rand -base64 32)
           echo "::add-mask::$secret"
           {

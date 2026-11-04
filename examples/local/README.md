@@ -8,7 +8,7 @@ The containers run privileged, which is simplest with rootful Podman. On a Mac, 
 export CONTAINER_CONNECTION=podman-machine-default-root   # macOS
 export PODMAN="sudo podman"                               # Linux
 ./up.sh
-NAME=circuit-bind-secondary PORT=2223 ./up.sh
+CONTAINER_NAME=circuit-bind-secondary PORT=2223 ./up.sh
 
 export TF_VAR_tsig_secret=$(openssl rand -base64 32)
 export TF_VAR_secondary_port=2223

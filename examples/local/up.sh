@@ -2,7 +2,7 @@
 # Starts a throwaway host on 127.0.0.1:$PORT (default 2222) that Conn3x can
 # configure, with a fresh SSH key and its host key in ./known_hosts.
 # CONTAINERFILE picks another image, such as one of Conn3x's test images.
-# NAME names the container: run it a second time with NAME=circuit-bind-secondary
+# CONTAINER_NAME names the container: run it a second time with CONTAINER_NAME=circuit-bind-secondary
 # and another PORT for a secondary.
 # Needs Podman, since the host runs systemd. The container is privileged, as
 # Conn3x's other examples are. Rootful Podman is simplest:
@@ -12,7 +12,7 @@ set -eu
 cd "$(dirname "$0")"
 port=${PORT:-2222}
 containerfile=${CONTAINERFILE:-Containerfile}
-name=${NAME:-circuit-bind}
+name=${CONTAINER_NAME:-circuit-bind}
 
 podman=${PODMAN:-podman}
 [ -f id_ed25519 ] || ssh-keygen -q -t ed25519 -N '' -C "$name" -f id_ed25519
