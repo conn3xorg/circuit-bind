@@ -12,7 +12,7 @@ The same settings land on Debian, Ubuntu, Fedora and Rocky Linux. The circuit pi
 
 ```hcl
 module "dns" {
-  source = "github.com/conn3xorg/circuit-bind?ref=v0.2.0"
+  source = "github.com/conn3xorg/circuit-bind?ref=v0.2.1"
 
   hosts                = { ns1 = "203.0.113.10" }
   ssh_private_key_file = "~/.ssh/id_ed25519"
@@ -65,7 +65,7 @@ variable "tsig_secret" {
 }
 
 module "ns1" {
-  source = "github.com/conn3xorg/circuit-bind?ref=v0.2.0"
+  source = "github.com/conn3xorg/circuit-bind?ref=v0.2.1"
   hosts  = { ns1 = "203.0.113.10" }
 
   tsig_keys = { transfer = var.tsig_secret }
@@ -87,7 +87,8 @@ module "ns1" {
 }
 
 module "ns2" {
-  source = "github.com/conn3xorg/circuit-bind?ref=v0.2.0"
+  source     = "github.com/conn3xorg/circuit-bind?ref=v0.2.1"
+  depends_on = [module.ns1]
   hosts  = { ns2 = "198.51.100.10" }
 
   tsig_keys = { transfer = var.tsig_secret }
@@ -106,7 +107,7 @@ Make a secret with `tsig-keygen transfer`, which prints a key block with the sec
 
 `allow_transfer` is a BIND address match list, so `"key transfer"` lets anyone holding the key transfer the zone, and `"198.51.100.10"` lets that address transfer it unsigned. Leave it empty and nobody can. `also_notify` lists servers to tell about each change. The primary also tells every server named in the zone's `NS` records that it can find an address for, so with `ns2`'s `A` record in the zone, as above, `also_notify` is belt and braces.
 
-The two modules can apply side by side. Whichever server comes up second finds the other ready: a secondary asks for the zone as soon as it loads it, and a primary sends NOTIFY when it starts.
+Give the secondary `depends_on = [module.ns1]` so it starts after the primary. A secondary asks for the zone as soon as it loads it, and if the primary isn't answering yet, that refresh is refused. A NOTIFY that lands while it's in progress is only queued, so the secondary can go without the zone until its next retry.
 
 ### The serial
 

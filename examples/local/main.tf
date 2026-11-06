@@ -67,11 +67,13 @@ module "primary" {
   soa = { rname = "hostmaster.example.test." }
 }
 
-# The secondary asks for the zone signed with the same key. The two apply
-# side by side: whichever starts second, the secondary's first try or the
-# primary's NOTIFY finds the other ready.
+# The secondary asks for the zone signed with the same key. It waits for the
+# primary: a secondary that starts first has its refresh refused, and a
+# NOTIFY that lands during that refresh is only queued, so the zone can be
+# missing until the next retry.
 module "secondary" {
-  source = "../.."
+  source     = "../.."
+  depends_on = [module.primary]
 
   hosts                = local.secondary
   ssh_private_key_file = "./id_ed25519"
