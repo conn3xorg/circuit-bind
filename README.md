@@ -12,7 +12,7 @@ The same settings land on Debian, Ubuntu, Fedora and Rocky Linux. The circuit pi
 
 ```hcl
 module "dns" {
-  source = "github.com/conn3xorg/circuit-bind?ref=v0.2.0"
+  source = "github.com/conn3xorg/circuit-bind?ref=v0.2.1"
 
   hosts                = { ns1 = "203.0.113.10" }
   ssh_private_key_file = "~/.ssh/id_ed25519"
@@ -65,7 +65,7 @@ variable "tsig_secret" {
 }
 
 module "ns1" {
-  source = "github.com/conn3xorg/circuit-bind?ref=v0.2.0"
+  source = "github.com/conn3xorg/circuit-bind?ref=v0.2.1"
   hosts  = { ns1 = "203.0.113.10" }
 
   tsig_keys = { transfer = var.tsig_secret }
@@ -87,7 +87,7 @@ module "ns1" {
 }
 
 module "ns2" {
-  source = "github.com/conn3xorg/circuit-bind?ref=v0.2.0"
+  source = "github.com/conn3xorg/circuit-bind?ref=v0.2.1"
   hosts  = { ns2 = "198.51.100.10" }
 
   tsig_keys = { transfer = var.tsig_secret }
