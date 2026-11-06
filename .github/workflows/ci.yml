@@ -173,6 +173,13 @@ jobs:
             grep -qx keep /root/keep
           '
           conn3x plan -detailed-exitcode -var www_address=192.0.2.12
+      - name: Show named's logs
+        if: failure()
+        run: |
+          for c in circuit-bind circuit-bind-secondary; do
+            echo "== $c"
+            sudo podman exec $c journalctl -u named -u bind --no-pager -n 60 || true
+          done
       - name: Clean up
         if: always()
         working-directory: examples/local
