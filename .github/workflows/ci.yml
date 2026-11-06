@@ -142,6 +142,21 @@ jobs:
           after=$(sudo podman exec circuit-bind-secondary dig +short @127.0.0.1 example.test SOA | awk '{ print $3 }')
           echo "serial $before -> $after"
           [ "$after" -gt "$before" ]
+      # Restarting named on both servers: the primary loads its zone from
+      # disk, the secondary from its transferred copy, and both have to
+      # answer as before. Restarting the containers would move them to new
+      # addresses, which the zone's config names.
+      - name: Restart named on both servers, then plan again with no changes
+        working-directory: examples/local
+        run: |
+          for c in circuit-bind circuit-bind-secondary; do
+            sudo podman exec $c sh -c 'systemctl restart named || systemctl restart bind'
+          done
+          conn3x plan -detailed-exitcode -var www_address=192.0.2.11
+      - name: Check both servers answer after the restart
+        env:
+          WWW: 192.0.2.11
+        run: *check
       - name: A link beside the zone file leaves where it points as it was
         working-directory: examples/local
         run: |
